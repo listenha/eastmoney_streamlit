@@ -52,6 +52,12 @@ with tab1:
 
     range_type = RANGE_1W if range_opt == "近一周" else RANGE_1M
 
+    # 初始化 session_state
+    if 't1_data' not in st.session_state:
+        st.session_state.t1_data = None
+    if 't1_meta' not in st.session_state:
+        st.session_state.t1_meta = None
+
     if st.button("拉取表一数据", key="t1_fetch"):
         with st.spinner("正在获取数据..."):
             df = get_survey_data(dc, range_type=range_type, page_size=page_size)
@@ -59,22 +65,33 @@ with tab1:
         # 按SUM阈值过滤
         if len(df) > 0 and 'SUM' in df.columns:
             df_filtered = df[df['SUM'] > sum_threshold].copy()
-            st.write(f"原始返回行数：{len(df)}；过滤后行数：{len(df_filtered)}（SUM > {sum_threshold}）；时间范围：{range_type.label}")
+            meta_text = f"原始返回行数：{len(df)}；过滤后行数：{len(df_filtered)}（SUM > {sum_threshold}）；时间范围：{range_type.label}"
             
             if len(df_filtered) > 0:
                 # 格式化金额字段为万元
                 df_display = format_amount_to_wan(df_filtered)
-                st.dataframe(df_display, use_container_width=True)
+                st.session_state.t1_data = df_display
+                st.session_state.t1_meta = meta_text
             else:
+                st.session_state.t1_data = None
+                st.session_state.t1_meta = meta_text
                 st.info(f"未找到SUM > {sum_threshold}的数据")
         else:
-            st.write(f"返回行数：{len(df)}；时间范围：{range_type.label}")
+            meta_text = f"返回行数：{len(df)}；时间范围：{range_type.label}"
             if len(df) > 0:
                 # 格式化金额字段为万元
                 df_display = format_amount_to_wan(df)
-                st.dataframe(df_display, use_container_width=True)
+                st.session_state.t1_data = df_display
+                st.session_state.t1_meta = meta_text
             else:
+                st.session_state.t1_data = None
+                st.session_state.t1_meta = meta_text
                 st.info("未获取到数据")
+
+    # 显示已保存的数据（如果有）
+    if st.session_state.t1_data is not None:
+        st.write(st.session_state.t1_meta)
+        st.dataframe(st.session_state.t1_data, use_container_width=True)
 
 # -------------------
 # 表二：机构席位追踪（Top10交集）
@@ -103,6 +120,12 @@ with tab2:
         col_buycnt = st.text_input("买入次数字段名", value=col_buycnt, key="t2_buycnt")
         key_col = st.text_input("交集键（股票代码字段）", value=key_col, key="t2_key")
 
+    # 初始化 session_state
+    if 't2_data' not in st.session_state:
+        st.session_state.t2_data = None  # 存储 (top10_netbuy, top10_buycnt, inter) 的元组
+    if 't2_meta' not in st.session_state:
+        st.session_state.t2_meta = None
+
     if st.button("计算 TopK 交集", key="t2_run"):
         with st.spinner("正在计算..."):
             try:
@@ -119,18 +142,29 @@ with tab2:
                 st.error(f"计算失败：{e}")
                 st.stop()
 
-        st.write(f"统计周期：{cycle_label} | TopK：{k}")
+        meta_text = f"统计周期：{cycle_label} | TopK：{k}"
+        st.session_state.t2_data = (
+            format_amount_to_wan(top10_netbuy),
+            format_amount_to_wan(top10_buycnt),
+            format_amount_to_wan(inter),
+        )
+        st.session_state.t2_meta = meta_text
+
+    # 显示已保存的数据（如果有）
+    if st.session_state.t2_data is not None:
+        top10_netbuy, top10_buycnt, inter = st.session_state.t2_data
+        st.write(st.session_state.t2_meta)
         
         cA, cB, cC = st.columns(3)
         with cA:
-            st.markdown(f"**Top{k} by 净买额** ({len(top10_netbuy)} 行)")
-            st.dataframe(format_amount_to_wan(top10_netbuy), use_container_width=True, height=320)
+            st.markdown(f"**Top{len(top10_netbuy)} by 净买额** ({len(top10_netbuy)} 行)")
+            st.dataframe(top10_netbuy, use_container_width=True, height=320)
         with cB:
-            st.markdown(f"**Top{k} by 买入次数** ({len(top10_buycnt)} 行)")
-            st.dataframe(format_amount_to_wan(top10_buycnt), use_container_width=True, height=320)
+            st.markdown(f"**Top{len(top10_buycnt)} by 买入次数** ({len(top10_buycnt)} 行)")
+            st.dataframe(top10_buycnt, use_container_width=True, height=320)
         with cC:
             st.markdown(f"**交集结果** ({len(inter)} 行)")
-            st.dataframe(format_amount_to_wan(inter), use_container_width=True, height=320)
+            st.dataframe(inter, use_container_width=True, height=320)
 
 # -------------------
 # 表三：机构买卖每日统计（多窗口去重合并）
@@ -147,6 +181,12 @@ with tab3:
     with col3:
         ratio_col = st.text_input("占比字段名", value="RATIO", key="t3_ratio")
 
+    # 初始化 session_state
+    if 't3_data' not in st.session_state:
+        st.session_state.t3_data = None
+    if 't3_meta' not in st.session_state:
+        st.session_state.t3_meta = None
+
     if st.button("生成表三", key="t3_run"):
         with st.spinner("正在从所有窗口获取数据并去重合并..."):
             try:
@@ -160,14 +200,21 @@ with tab3:
                 st.error(f"获取数据失败：{e}")
                 st.stop()
 
-        st.write(f"去重后行数：{len(df)}（从所有窗口合并，阈值 > {threshold}%）")
-        
+        meta_text = f"去重后行数：{len(df)}（从所有窗口合并，阈值 > {threshold}%）"
         if len(df) > 0:
             # 格式化金额字段为万元
             df_display = format_amount_to_wan(df)
-            st.dataframe(df_display, use_container_width=True)
+            st.session_state.t3_data = df_display
+            st.session_state.t3_meta = meta_text
         else:
+            st.session_state.t3_data = None
+            st.session_state.t3_meta = meta_text
             st.info("未找到满足条件的数据")
+
+    # 显示已保存的数据（如果有）
+    if st.session_state.t3_data is not None:
+        st.write(st.session_state.t3_meta)
+        st.dataframe(st.session_state.t3_data, use_container_width=True)
 
 # -------------------
 # 表四：表三 ∩ 表二
@@ -196,6 +243,12 @@ with tab4:
         t2_buycnt_col = st.text_input("表二买入次数字段名", value="BUY_TIMES", key="t4_t2_buycnt")
         key_col = st.text_input("交集键（股票代码字段）", value="SECURITY_CODE", key="t4_key")
 
+    # 初始化 session_state
+    if 't4_data' not in st.session_state:
+        st.session_state.t4_data = None
+    if 't4_meta' not in st.session_state:
+        st.session_state.t4_meta = None
+
     if st.button("计算表四（交集）", key="t4_run"):
         with st.spinner("正在计算表三和表二，并求交集..."):
             try:
@@ -214,11 +267,18 @@ with tab4:
                 st.error(f"计算失败：{e}")
                 st.stop()
 
-        st.write(f"表二周期：{cycle_label} | 交集行数：{len(df)}")
-        
+        meta_text = f"表二周期：{cycle_label} | 交集行数：{len(df)}"
         if len(df) > 0:
             # 格式化金额字段为万元
             df_display = format_amount_to_wan(df)
-            st.dataframe(df_display, use_container_width=True)
+            st.session_state.t4_data = df_display
+            st.session_state.t4_meta = meta_text
         else:
+            st.session_state.t4_data = None
+            st.session_state.t4_meta = meta_text
             st.info("表三和表二没有交集，未找到同时满足两个条件的数据")
+
+    # 显示已保存的数据（如果有）
+    if st.session_state.t4_data is not None:
+        st.write(st.session_state.t4_meta)
+        st.dataframe(st.session_state.t4_data, use_container_width=True)
