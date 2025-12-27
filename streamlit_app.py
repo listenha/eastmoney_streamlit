@@ -9,6 +9,10 @@ src_path = project_root / "src"
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
-# Import the main app (this will execute the streamlit code)
-from eastmoney_tool.ui.app import *
+# Read and execute the app file directly
+app_file_path = project_root / "src" / "eastmoney_tool" / "ui" / "app.py"
+with open(app_file_path, 'r', encoding='utf-8') as f:
+    code = f.read()
 
+# Execute the code in the current namespace
+exec(compile(code, str(app_file_path), 'exec'))
